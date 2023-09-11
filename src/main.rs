@@ -5,7 +5,7 @@ pub mod prelude {
 
     pub use bytes::{BufMut, BytesMut};
     pub use futures::{pin_mut, Future, StreamExt};
-    pub use llm::{models::Llama, Model};
+    pub use llm::{models::Llama, Model, Prompt};
     pub use rand;
     pub use std::{sync::mpsc::sync_channel, thread};
     pub use tokio::{
@@ -54,14 +54,13 @@ fn infer(
     let llm_model = init_llm().unwrap();
 
     while let Ok(msg) = rx_infer.recv() {
-        let prompt = msg.to_string();
         let mut session = llm_model.start_session(Default::default());
 
         let _res = session.infer::<std::convert::Infallible>(
             &llm_model,
             &mut rand::thread_rng(),
             &llm::InferenceRequest {
-                prompt: Some(prompt).as_deref().unwrap().into(),
+                prompt: Prompt::Text(&msg),
                 parameters: &llm::InferenceParameters::default(),
                 play_back_previous_tokens: false,
                 maximum_token_count: Some(1000),
