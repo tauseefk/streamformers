@@ -4,11 +4,10 @@ pub mod prelude {
     pub use std::sync::{mpsc::SyncSender, Arc, Mutex, OnceLock};
 
     pub use bytes::{BufMut, BytesMut};
-    pub use futures::executor::block_on;
     pub use futures::{pin_mut, Future, StreamExt};
     pub use llm::{models::Llama, Model};
     pub use rand;
-    pub use std::{error::Error, sync::mpsc::sync_channel, thread};
+    pub use std::{sync::mpsc::sync_channel, thread};
     pub use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
         sync::mpsc::{channel, Receiver},
