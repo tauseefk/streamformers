@@ -3,7 +3,7 @@ pub mod prelude {
     pub use std::pin::Pin;
     pub use std::sync::{
         mpsc::{sync_channel, Receiver, SyncSender},
-        Arc, Mutex, OnceLock,
+        Arc, Mutex,
     };
     pub use std::thread;
 
