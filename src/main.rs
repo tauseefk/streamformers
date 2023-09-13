@@ -1,17 +1,20 @@
 pub mod prelude {
     pub use std::env;
     pub use std::pin::Pin;
-    pub use std::sync::{mpsc::SyncSender, Arc, Mutex, OnceLock};
+    pub use std::sync::{
+        mpsc::{sync_channel, Receiver, SyncSender},
+        Arc, Mutex, OnceLock,
+    };
+    pub use std::thread;
 
     pub use bytes::{BufMut, BytesMut};
     pub use futures::{pin_mut, Future, StreamExt};
-    pub use llm::{models::Llama, Model, Prompt};
-    pub use rand;
-    pub use std::{sync::mpsc::sync_channel, thread};
-    pub use tokio::{
-        io::{AsyncReadExt, AsyncWriteExt},
-        sync::mpsc::{channel, Receiver},
+    pub use llm::{
+        models::Llama, InferenceFeedback, InferenceParameters, InferenceRequest, InferenceResponse,
+        Model, Prompt,
     };
+    pub use rand;
+    pub use tokio::io::{AsyncReadExt, AsyncWriteExt};
 }
 
 use crate::prelude::*;
@@ -48,8 +51,8 @@ fn init_llm() -> Result<Llama, &'static str> {
 }
 
 fn infer(
-    rx_infer: std::sync::mpsc::Receiver<String>,
-    tx_callback: tokio::sync::mpsc::Sender<llm::InferenceResponse>,
+    rx_infer: Receiver<String>,
+    tx_callback: SyncSender<InferenceResponse>,
 ) -> Result<(), &'static str> {
     let llm_model = init_llm().unwrap();
 
@@ -59,26 +62,26 @@ fn infer(
         let _res = session.infer::<std::convert::Infallible>(
             &llm_model,
             &mut rand::thread_rng(),
-            &llm::InferenceRequest {
+            &InferenceRequest {
                 prompt: Prompt::Text(&msg),
-                parameters: &llm::InferenceParameters::default(),
+                parameters: &InferenceParameters::default(),
                 play_back_previous_tokens: false,
                 maximum_token_count: Some(1000),
             },
             &mut Default::default(),
             |r| match r {
-                llm::InferenceResponse::EotToken => {
-                    let _ = tx_callback.blocking_send(r);
-                    Ok(llm::InferenceFeedback::Halt)
+                InferenceResponse::EotToken => {
+                    let _ = tx_callback.send(r);
+                    Ok(InferenceFeedback::Halt)
                 }
                 _ => {
-                    let _ = tx_callback.blocking_send(r);
-                    Ok(llm::InferenceFeedback::Continue)
+                    let _ = tx_callback.send(r);
+                    Ok(InferenceFeedback::Continue)
                 }
             },
         );
 
-        let _ = tx_callback.blocking_send(llm::InferenceResponse::EotToken);
+        let _ = tx_callback.send(InferenceResponse::EotToken);
     }
 
     Ok(())
@@ -87,7 +90,7 @@ fn infer(
 #[tokio::main]
 async fn main() {
     let (tx_infer, rx_infer) = sync_channel::<String>(3);
-    let (tx_callback, mut rx_callback) = channel::<llm::InferenceResponse>(3);
+    let (tx_callback, rx_callback) = sync_channel::<InferenceResponse>(3);
 
     thread::spawn(move || {
         let _ = infer(rx_infer, tx_callback);
@@ -100,10 +103,10 @@ async fn main() {
     let inference_stream = async_stream::stream! {
         let mut buf = BytesMut::with_capacity(1024);
 
-        while let Some(msg) = &rx_callback.recv().await {
+        while let Ok(msg) = &rx_callback.recv() {
             match msg {
-                llm::InferenceResponse::PromptToken(val)
-                | llm::InferenceResponse::InferredToken(val) => {
+                InferenceResponse::PromptToken(val)
+                | InferenceResponse::InferredToken(val) => {
                     buf.put(val.as_bytes());
                     yield buf.clone();
                 }
